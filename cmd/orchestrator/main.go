@@ -10,16 +10,14 @@ import (
 	"time"
 )
 
-// Task представляет задачу для вычисления арифметического выражения
 type Task struct {
-	ID      string  `json:"id"`
-	Expr    string  `json:"expr"`
-	Status  string  `json:"status"`
-	Result  float64 `json:"result"`
+	ID      string   `json:"id"`
+	Expr    string   `json:"expr"`
+	Status  string   `json:"status"`
+	Result  float64  `json:"result"`
 	Workers []string `json:"workers"`
 }
 
-// Оркестратор управляет задачами и агентами
 type Orchestrator struct {
 	mu      sync.Mutex
 	tasks   map[string]*Task
@@ -30,11 +28,10 @@ type Orchestrator struct {
 func NewOrchestrator() *Orchestrator {
 	return &Orchestrator{
 		tasks:  make(map[string]*Task),
-		agents: []string{"agent1", "agent2", "agent3"}, // Пример агентов
+		agents: []string{"agent1", "agent2", "agent3"},
 	}
 }
 
-// createTask создаёт новую задачу для вычисления выражения
 func (o *Orchestrator) createTask(expr string) *Task {
 	o.taskMux.Lock()
 	defer o.taskMux.Unlock()
@@ -46,27 +43,22 @@ func (o *Orchestrator) createTask(expr string) *Task {
 		Status: "pending",
 	}
 
-	// Разделяем задачу на части для агентов
 	task.Workers = o.assignWorkers(expr)
 
 	o.tasks[taskID] = task
 	return task
 }
 
-// assignWorkers распределяет задачу между агентами
 func (o *Orchestrator) assignWorkers(expr string) []string {
-	// Простая логика для распределения задач между агентами (например, разбиваем по частям)
 	numWorkers := len(o.agents)
 	return o.agents[:numWorkers]
 }
 
-// computeTask вычисляет задачу, вызывая агентов
 func (o *Orchestrator) computeTask(task *Task) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
 	task.Status = "in-progress"
-	// Имитируем вычисление, где каждый агент выполняет свою часть
 	var wg sync.WaitGroup
 	results := make([]float64, len(task.Workers))
 
@@ -74,15 +66,13 @@ func (o *Orchestrator) computeTask(task *Task) {
 		wg.Add(1)
 		go func(i int, agent string) {
 			defer wg.Done()
-			// Имитируем вычисления агента
-			results[i] = math.Pow(2, float64(i)) // Пример вычисления (можно заменить на реальное вычисление)
+			results[i] = math.Pow(2, float64(i))
 			log.Printf("Agent %s computed part of task %s", agent, task.ID)
 		}(i, agent)
 	}
 
 	wg.Wait()
 
-	// Суммируем результаты
 	var totalResult float64
 	for _, result := range results {
 		totalResult += result
@@ -92,7 +82,6 @@ func (o *Orchestrator) computeTask(task *Task) {
 	task.Status = "completed"
 }
 
-// handleComputeRequest обрабатывает запрос на вычисление выражения
 func (o *Orchestrator) handleComputeRequest(w http.ResponseWriter, r *http.Request) {
 	var request map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -108,16 +97,13 @@ func (o *Orchestrator) handleComputeRequest(w http.ResponseWriter, r *http.Reque
 
 	task := o.createTask(expr)
 
-	// Асинхронно запускаем вычисление задачи
 	go o.computeTask(task)
 
-	// Отправляем ответ с ID задачи
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(task)
 }
 
-// handleTaskStatusRequest обрабатывает запрос на получение статуса задачи
 func (o *Orchestrator) handleTaskStatusRequest(w http.ResponseWriter, r *http.Request) {
 	taskID := r.URL.Query().Get("task_id")
 	if taskID == "" {
@@ -138,7 +124,6 @@ func (o *Orchestrator) handleTaskStatusRequest(w http.ResponseWriter, r *http.Re
 	json.NewEncoder(w).Encode(task)
 }
 
-// handleResultRequest обрабатывает запрос на получение результата вычисления
 func (o *Orchestrator) handleResultRequest(w http.ResponseWriter, r *http.Request) {
 	taskID := r.URL.Query().Get("task_id")
 	if taskID == "" {
