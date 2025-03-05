@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  orchestrator:
+    build:
+      context: ./orchestrator
+    ports:
+      - "8080:8080"
+  agent1:
+    build:
+      context: ./agent
+    ports:
+      - "8081:8081"
+  agent2:
+    build:
+      context: ./agent
+    ports:
+      - "8082:8082"

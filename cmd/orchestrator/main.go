@@ -1,125 +1,178 @@
-package orchestration
+package main
 
 import (
 	"encoding/json"
-	"errors"
-	"math/rand"
+	"fmt"
+	"log"
+	"math"
 	"net/http"
-	"strconv"
 	"sync"
-	"github.com/gorilla/mux"
+	"time"
 )
 
-var (
-	ErrEmptyExpression  = errors.New("expression is empty")
-	ErrInvalidExpression = errors.New("invalid expression")
-	ErrNotCorrInput     = errors.New("incorrect input")
-)
-
-type Expression struct {
-	ID     string  `json:"id"`
-	Status string  `json:"status"`
-	Result float64 `json:"result,omitempty"`
-}
-
+// Task представляет задачу для вычисления арифметического выражения
 type Task struct {
-	ID            string  `json:"id"`
-	Arg1          float64 `json:"arg1"`
-	Arg2          float64 `json:"arg2"`
-	Operation     string  `json:"operation"`
-	OperationTime int     `json:"operation_time"`
+	ID      string  `json:"id"`
+	Expr    string  `json:"expr"`
+	Status  string  `json:"status"`
+	Result  float64 `json:"result"`
+	Workers []string `json:"workers"`
 }
 
+// Оркестратор управляет задачами и агентами
 type Orchestrator struct {
-	mu           sync.Mutex
-	expressions  map[string]*Expression
-	tasks        []Task
+	mu      sync.Mutex
+	tasks   map[string]*Task
+	agents  []string
+	taskMux sync.Mutex
 }
 
 func NewOrchestrator() *Orchestrator {
 	return &Orchestrator{
-		expressions: make(map[string]*Expression),
-		tasks:       []Task{},
+		tasks:  make(map[string]*Task),
+		agents: []string{"agent1", "agent2", "agent3"}, // Пример агентов
 	}
 }
 
-func (o *Orchestrator) AddExpression(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Expression string `json:"expression"`
+// createTask создаёт новую задачу для вычисления выражения
+func (o *Orchestrator) createTask(expr string) *Task {
+	o.taskMux.Lock()
+	defer o.taskMux.Unlock()
+
+	taskID := fmt.Sprintf("%d", time.Now().UnixNano())
+	task := &Task{
+		ID:     taskID,
+		Expr:   expr,
+		Status: "pending",
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusUnprocessableEntity)
+
+	// Разделяем задачу на части для агентов
+	task.Workers = o.assignWorkers(expr)
+
+	o.tasks[taskID] = task
+	return task
+}
+
+// assignWorkers распределяет задачу между агентами
+func (o *Orchestrator) assignWorkers(expr string) []string {
+	// Простая логика для распределения задач между агентами (например, разбиваем по частям)
+	numWorkers := len(o.agents)
+	return o.agents[:numWorkers]
+}
+
+// computeTask вычисляет задачу, вызывая агентов
+func (o *Orchestrator) computeTask(task *Task) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	task.Status = "in-progress"
+	// Имитируем вычисление, где каждый агент выполняет свою часть
+	var wg sync.WaitGroup
+	results := make([]float64, len(task.Workers))
+
+	for i, agent := range task.Workers {
+		wg.Add(1)
+		go func(i int, agent string) {
+			defer wg.Done()
+			// Имитируем вычисления агента
+			results[i] = math.Pow(2, float64(i)) // Пример вычисления (можно заменить на реальное вычисление)
+			log.Printf("Agent %s computed part of task %s", agent, task.ID)
+		}(i, agent)
+	}
+
+	wg.Wait()
+
+	// Суммируем результаты
+	var totalResult float64
+	for _, result := range results {
+		totalResult += result
+	}
+
+	task.Result = totalResult
+	task.Status = "completed"
+}
+
+// handleComputeRequest обрабатывает запрос на вычисление выражения
+func (o *Orchestrator) handleComputeRequest(w http.ResponseWriter, r *http.Request) {
+	var request map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
-	id := strconv.Itoa(rand.Intn(100000))
-	o.mu.Lock()
-	o.expressions[id] = &Expression{ID: id, Status: "pending"}
-	// Разбиение выражения на задачи будет здесь
-	o.mu.Unlock()
-
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"id": id})
-}
-
-func (o *Orchestrator) GetExpressions(w http.ResponseWriter, r *http.Request) {
-	o.mu.Lock()
-	exprs := make([]*Expression, 0, len(o.expressions))
-	for _, expr := range o.expressions {
-		exprs = append(exprs, expr)
+	expr, ok := request["expr"]
+	if !ok || expr == "" {
+		http.Error(w, "Expression is required", http.StatusBadRequest)
+		return
 	}
-	o.mu.Unlock()
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{ "expressions": exprs })
+	task := o.createTask(expr)
+
+	// Асинхронно запускаем вычисление задачи
+	go o.computeTask(task)
+
+	// Отправляем ответ с ID задачи
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(task)
 }
 
-func (o *Orchestrator) GetExpressionByID(w http.ResponseWriter, r *http.Request) {
-	id := mux.Vars(r)["id"]
+// handleTaskStatusRequest обрабатывает запрос на получение статуса задачи
+func (o *Orchestrator) handleTaskStatusRequest(w http.ResponseWriter, r *http.Request) {
+	taskID := r.URL.Query().Get("task_id")
+	if taskID == "" {
+		http.Error(w, "Task ID is required", http.StatusBadRequest)
+		return
+	}
+
 	o.mu.Lock()
-	expr, exists := o.expressions[id]
+	task, exists := o.tasks[taskID]
 	o.mu.Unlock()
 
 	if !exists {
-		http.Error(w, "Not found", http.StatusNotFound)
+		http.Error(w, "Task not found", http.StatusNotFound)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{ "expression": expr })
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(task)
 }
 
-func (o *Orchestrator) GetTask(w http.ResponseWriter, r *http.Request) {
-	o.mu.Lock()
-	if len(o.tasks) == 0 {
-		o.mu.Unlock()
-		http.Error(w, "No task available", http.StatusNotFound)
-		return
-	}
-	task := o.tasks[0]
-	o.tasks = o.tasks[1:]
-	o.mu.Unlock()
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{ "task": task })
-}
-
-func (o *Orchestrator) SubmitTaskResult(w http.ResponseWriter, r *http.Request) {
-	var result struct {
-		ID     string  `json:"id"`
-		Result float64 `json:"result"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&result); err != nil {
-		http.Error(w, "Invalid request", http.StatusUnprocessableEntity)
+// handleResultRequest обрабатывает запрос на получение результата вычисления
+func (o *Orchestrator) handleResultRequest(w http.ResponseWriter, r *http.Request) {
+	taskID := r.URL.Query().Get("task_id")
+	if taskID == "" {
+		http.Error(w, "Task ID is required", http.StatusBadRequest)
 		return
 	}
 
 	o.mu.Lock()
-	if expr, exists := o.expressions[result.ID]; exists {
-		expr.Result = result.Result
-		expr.Status = "completed"
-	}
+	task, exists := o.tasks[taskID]
 	o.mu.Unlock()
 
-	w.WriteHeader(http.StatusOK)
+	if !exists {
+		http.Error(w, "Task not found", http.StatusNotFound)
+		return
+	}
+
+	if task.Status != "completed" {
+		http.Error(w, "Task is not completed yet", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(task)
+}
+
+func main() {
+	orchestrator := NewOrchestrator()
+
+	http.HandleFunc("/compute", orchestrator.handleComputeRequest)
+	http.HandleFunc("/status", orchestrator.handleTaskStatusRequest)
+	http.HandleFunc("/result", orchestrator.handleResultRequest)
+
+	log.Println("Orchestrator started on port 8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatal("Error starting server:", err)
+	}
 }
