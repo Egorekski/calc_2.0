@@ -67,7 +67,7 @@ project-root/
 
 ## Примеры запросов с `curl`
 
-### ✅ Успешный запрос
+### Успешный запрос
 
 ```sh
 curl --location 'http://localhost:8080/evaluate' \
@@ -83,7 +83,7 @@ curl --location 'http://localhost:8080/evaluate' \
 }
 ```
 
-### ❌ Ошибочный запрос (некорректное выражение)
+### Ошибочный запрос (некорректное выражение)
 
 ```sh
 curl --location 'http://localhost:8080/evaluate' \
