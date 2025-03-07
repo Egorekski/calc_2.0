@@ -101,10 +101,54 @@ curl --location 'http://localhost:8080/evaluate' \
 
 ## Схема работы системы
 
-1. Клиент отправляет выражение → Оркестратор.
-2. Оркестратор передает задачу агенту.
-3. Агент вычисляет выражение и возвращает результат оркестратору.
-4. Оркестратор отправляет ответ клиенту.
+
+```plantuml
+@startuml
+@startuml
+' Определим основные классы и их взаимодействие
+
+class Orchestrator {
+  +addExpression(expression: string): ExpressionID
+  +getExpressions(): List<Expression>
+  +getExpressionById(id: ExpressionID): Expression
+  +getTask(): Task
+  +submitTaskResult(taskId: TaskID, result: float): void
+}
+
+class Agent {
+  +startWorkers(computingPower: int): void
+  +fetchTask(): Task
+  +submitResult(taskId: TaskID, result: float): void
+}
+
+class Expression {
+  +id: ExpressionID
+  +status: string
+  +result: float
+}
+
+class Task {
+  +id: TaskID
+  +arg1: string
+  +arg2: string
+  +operation: string
+  +operation_time: int
+}
+
+' Взаимодействие между компонентами
+Orchestrator "1" --> "many" Expression : manages
+Orchestrator "1" --> "many" Task : generates
+Agent "1" --> "1" Orchestrator : fetches tasks
+Agent "1" --> "1" Orchestrator : submits results
+
+' Внешний интерфейс
+User --> Orchestrator : submits expression
+User --> Orchestrator : queries expression status
+
+@enduml
+@enduml
+```
+
 
 ## Тестирование
 
