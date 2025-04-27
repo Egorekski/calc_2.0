@@ -1,20 +1,61 @@
 package main
 
 import (
-	"github.com/Egorekski/calc_2.0/internal/worker"
-	"log"
-	"net/http"
+	"context"
+	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"distributed_calculator/internal/constants"
+	"distributed_calculator/configs"
+	"distributed_calculator/internal/logger"
+	"distributed_calculator/internal/worker"
+
+	"go.uber.org/zap"
 )
 
 func main() {
-	agentAddr := os.Getenv("AGENT_ADDR")
-	if agentAddr == "" {
-		agentAddr = "localhost:8081"
+
+	opts := logger.DefaultOptions()
+	opts.LogDir = "logs/agent"
+
+	log, err := logger.New(opts)
+	if err != nil {
+		_, printErr := fmt.Fprintf(os.Stderr, constants.ErrFailedInitLogger, err)
+		if printErr != nil {
+
+			os.Exit(2)
+		}
+		os.Exit(1)
+	}
+	defer func() {
+		if syncErr := log.Sync(); syncErr != nil {
+			_, printErr := fmt.Fprintf(os.Stderr, constants.ErrFailedSyncLogger, syncErr)
+			if printErr != nil {
+
+				os.Exit(2)
+			}
+		}
+	}()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cfg, err := configs.NewWorkerConfig()
+	if err != nil {
+		log.Fatal(constants.ErrFailedInitConfig, zap.Error(err))
 	}
 
-	http.HandleFunc("/task", worker.HandleTask)
+	agent := worker.New(cfg, log)
+	if err := agent.Start(); err != nil {
+		log.Fatal(constants.ErrFailedStartAgent, zap.Error(err))
+	}
 
-	log.Printf("Agent started at %s\n", agentAddr)
-	log.Fatal(http.ListenAndServe(agentAddr, nil))
+	log.Info(constants.LogAgentStarted)
+
+	<-ctx.Done()
+
+	agent.Stop()
+	log.Info(constants.LogAgentStoppedGrace)
 }
