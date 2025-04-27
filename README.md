@@ -1,4 +1,4 @@
-# Распределенный вычислитель арифметических выражений
+# Распределенный вычислитель арифметических выражений[^1]
 
 ## Описание проекта
 
@@ -6,13 +6,10 @@
 
 - **Оркестратора** – управляет вычислениями и распределяет задачи между агентами.
 - **Агентов** – выполняют вычисления по запросу оркестратора.
-- **API** – позволяет отправлять выражения на вычисление и получать результаты.
 
 ## Функциональность
 
 - Поддержка базовых арифметических операций (`+`, `-`, `*`, `/`).
-- Обработка скобок в выражениях.
-- Поддержка математических функций (`sqrt(x)`, `sin(x)`, `cos(x)`, `log(x)`).
 - Возможность работы с выражениями, содержащими произвольное количество пробелов.
 - Распределение вычислений между несколькими агентами.
 - Логирование запросов и результатов вычислений.
@@ -21,20 +18,31 @@
 
 ```
 project-root/
+│
 │── cmd/
-│   ├── orchestrator/  # Главный модуль оркестратора
-│   ├── agent/         # Главный модуль агента
+│   ├── orchestrator/      # Главный модуль оркестратора
+│   ├── agent/             # Главный модуль агента
+│
+│── configs/
 │
 │── internal/
-│   ├── orchestrator/  # Логика оркестратора
-│   ├── worker/        # Логика вычислений
-│   ├── api/           # Обработка HTTP-запросов
+│   ├── app/               # Логика оркестратора
+│   ├── constants/         # Константы приложения
+│   ├── logger/            # Логгер приложения
+│   ├── worker/            # Логика вычислений
 │
-│── test/              # Тесты проекта
-│── config/            # Конфигурационные файлы (например, config.yaml)
-│── Dockerfile         # Контейнеризация проекта
-│── docker-compose.yml # Запуск через Docker Compose
-│── README.md          # Документация проекта
+│── logs/                  
+│	│── agent/             # Логи агента
+│	│── orchestrator/      # Логи оркестратора
+│
+│── test/                  # Тесты проекта
+│
+│── pkg/                   # Логика вычислений
+│
+│── .env                   # Переменные окружения
+│
+│── docker-compose.yml     # Запуск через Docker Compose
+│── README.md              # Документация проекта
 ```
 
 ## Запуск проекта
@@ -52,51 +60,86 @@ project-root/
    ```
 3. **Отправьте выражение на вычисление:**
    ```sh
-   curl --location 'http://localhost:8080/evaluate' \
-   --header 'Content-Type: application/json' \
-   --data '{"expression": "(2+3)*sqrt(9)"}'
+   curl -L 'http://localhost:8080/api/v1/calculate' -H 'Content-Type: application/json' --data '{"expression":"2*3"}'
    ```
 
-### Запуск с Docker
+### Использование Docker
 
+#### Запуск
 1. **Соберите контейнеры и запустите их:**
    ```sh
-   docker-compose up --build
+    docker-compose up -d --build
    ```
+   ```sh
+   docker-compose up -d --scale agent=x
+   ```
+   x - параметр, который вы сами задаете, обозначающий кол-во агентов 
 2. **Отправьте запрос на вычисление (аналогично локальному запуску).**
+
+#### Остановка
+   ```sh
+   docker-compose stop
+   ```
+#### Удаление
+```sh
+docker-compose down
+```
+
 
 ## Примеры запросов с `curl`
 
 ### Успешный запрос
 
 ```sh
-curl --location 'http://localhost:8080/evaluate' \
---header 'Content-Type: application/json' \
---data '{"expression": "2+2*2"}'
+curl -L 'http://localhost:8080/api/v1/calculate' -H 'Content-Type: application/json' --data '{"expression":"2+3"}'  
 ```
 
 **Ответ:**
 
 ```json
 {
-  "result": 6
+  "id": "65591540-1000-47dd-b138-f42640ce85e8"
 }
 ```
 
 ### Ошибочный запрос (некорректное выражение)
 
 ```sh
-curl --location 'http://localhost:8080/evaluate' \
---header 'Content-Type: application/json' \
---data '{"expression": "invalid+expression"}'
+curl -L 'http://localhost:8080/api/v1/calculate' -H 'Content-Type: application/json' --data '{"expression":"some expression"}'
 ```
 
 **Ответ:**
 
 ```json
 {
-  "error": "invalid expression"
+  "error":"invalid expression: unexpected character 's'"
 }
+```
+
+### Список всех выражений
+#### Запрос
+```sh
+curl --location 'http://localhost:8080/api/v1/expressions'
+```
+#### Ответ
+```json
+{  
+  
+    "expressions": [  
+        {  
+            "id": "123e4567-e89b-12d3-a456-426614174000",  
+            "expression": "2+2*2",  
+            "status": "COMPLETE",  
+            "result": 6  
+        },  
+        {  
+            "id": "987fcdeb-51d3-12a4-b678-426614174000",  
+            "expression": "10-5",  
+            "status": "COMPLETE",  
+            "result": 5  
+        }  
+    ]  
+}  
 ```
 
 ## Схема работы системы
@@ -107,33 +150,12 @@ curl --location 'http://localhost:8080/evaluate' \
 
 1. **Запуск тестов:**
    ```sh
-   go test ./test -v
+   go test ./test 
    ```
-
-## API
-
-### POST `/evaluate`
-
-Отправляет математическое выражение на вычисление.
-
-#### Запрос:
-
-```json
-{
-  "expression": "(2+3)*sqrt(9)"
-}
-```
-
-#### Ответ:
-
-```json
-{
-  "result": 15
-}
-```
 
 ## Дальнейшие улучшения
 
-- Добавление логирования и мониторинга.
-- Реализация интеграционных тестов.
 - Оптимизация вычислений с кешированием.
+
+
+[^1]:  Проект при поддержке Яндекс Лицея и его лицеистов
